@@ -4,15 +4,97 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
     <meta name="theme-color" content="#05060f" />
+    <meta name="description" content="STARSTRING 星弦：單指重力彈弓街機。按住勾住天體繞行，放開把自己甩出去。" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
     <title>STARSTRING 星弦</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2714%27 fill=%27%2305060f%27/%3E%3Ccircle cx=%2724%27 cy=%2738%27 r=%2710%27 fill=%27%23ffd27a%27/%3E%3Cpath d=%27M24 38 A22 22 0 0 1 50 16%27 stroke=%27%238fe6ff%27 stroke-width=%274%27 fill=%27none%27 stroke-linecap=%27round%27/%3E%3Ccircle cx=%2750%27 cy=%2716%27 r=%275%27 fill=%27%23fff%27/%3E%3C/svg%3E" />
     <style>
+      :root { --ink: #f4f6ff; --dim: rgba(244, 246, 255, 0.62); --gold: #ffd27a; --cyan: #8fe6ff; }
       html, body { margin: 0; height: 100%; background: #05060f; overflow: hidden; }
-      body { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+      body {
+        touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+        font-family: "Segoe UI", "PingFang TC", "Noto Sans TC", system-ui, sans-serif; color: var(--ink);
+      }
       #stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+      #hud { position: fixed; inset: 0; pointer-events: none; font-variant-numeric: tabular-nums; }
+      #hud > * { position: absolute; transition: opacity 0.35s ease; }
+
+      #top {
+        top: calc(env(safe-area-inset-top) + 14px); left: 18px; right: 18px;
+        display: flex; justify-content: space-between; align-items: flex-start;
+      }
+      #score { font-size: 40px; font-weight: 700; line-height: 1; text-shadow: 0 0 18px rgba(143, 230, 255, 0.55); }
+      #best { margin-top: 6px; font-size: 13px; color: var(--dim); letter-spacing: 0.06em; }
+      #combo { text-align: right; color: var(--gold); opacity: 0; transition: opacity 0.2s; text-shadow: 0 0 16px rgba(255, 190, 90, 0.6); }
+      #combo[data-on="true"] { opacity: 1; }
+      #combo-count { font-size: 24px; font-weight: 700; line-height: 1; }
+      #combo-mult { margin-top: 4px; font-size: 14px; letter-spacing: 0.05em; }
+      #combo.pop { animation: pop 0.28s ease-out; }
+      @keyframes pop { 0% { transform: scale(1.5); } 100% { transform: scale(1); } }
+
+      #hint {
+        left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom) + 11%); text-align: center;
+        font-size: 15px; letter-spacing: 0.12em; color: var(--dim); opacity: 0;
+      }
+      #hud[data-phase="playing"][data-hint="true"] #hint { opacity: 1; }
+
+      .panel { inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; opacity: 0; }
+      #hud[data-phase="title"] #title, #hud[data-phase="dead"] #over { opacity: 1; }
+      #hud[data-phase="title"] #top, #hud[data-phase="dead"] #top { opacity: 0; }
+      #over { background: radial-gradient(ellipse at center, rgba(5, 6, 15, 0.78), rgba(5, 6, 15, 0.15) 75%); }
+
+      .logo {
+        margin: 0; font-size: clamp(34px, 11vw, 64px); font-weight: 800; letter-spacing: 0.2em; padding-left: 0.2em;
+        background: linear-gradient(180deg, #ffffff 20%, var(--cyan) 60%, #b48cff); -webkit-background-clip: text; background-clip: text; color: transparent;
+        filter: drop-shadow(0 0 22px rgba(120, 190, 255, 0.55));
+      }
+      .sub { margin-top: 10px; font-size: 20px; letter-spacing: 0.9em; padding-left: 0.9em; color: var(--dim); }
+      .rule { margin-top: 44px; font-size: 15px; line-height: 2; letter-spacing: 0.1em; color: var(--ink); }
+      .rule b { color: var(--cyan); font-weight: 600; }
+      .tap { margin-top: 40px; font-size: 16px; letter-spacing: 0.3em; padding-left: 0.3em; animation: breathe 1.8s ease-in-out infinite; }
+      @keyframes breathe { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+      #seed { margin-top: 26px; font-size: 12px; letter-spacing: 0.16em; color: var(--dim); }
+
+      #over-cause { font-size: 17px; letter-spacing: 0.4em; padding-left: 0.4em; color: #ff8fb0; }
+      #over-score { margin-top: 12px; font-size: 76px; font-weight: 800; line-height: 1; text-shadow: 0 0 30px rgba(143, 230, 255, 0.6); }
+      #over-record { margin-top: 12px; font-size: 15px; letter-spacing: 0.14em; color: var(--gold); }
+      #mute {
+        left: 14px; bottom: calc(env(safe-area-inset-bottom) + 14px); width: 44px; height: 44px; padding: 0;
+        pointer-events: auto; cursor: pointer; border: 1px solid rgba(244, 246, 255, 0.22); border-radius: 50%;
+        background: rgba(5, 6, 15, 0.45); color: var(--ink); font-size: 18px; line-height: 1;
+      }
+      #mute::before { content: "♪"; }
+      #mute[data-muted="true"] { color: var(--dim); text-decoration: line-through; }
+      #mute:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+      @media (prefers-reduced-motion: reduce) { .tap, #combo.pop { animation: none; } }
     </style>
   </head>
   <body>
     <canvas id="stage"></canvas>
+    <div id="hud" data-phase="title" data-hint="false">
+      <div id="top">
+        <div><div id="score">0</div><div id="best"></div></div>
+        <div id="combo" data-on="false"><div id="combo-count"></div><div id="combo-mult"></div></div>
+      </div>
+      <button id="mute" type="button" aria-label="靜音" aria-pressed="false"></button>
+      <div id="hint">按住 勾住恆星　·　放開 甩出去</div>
+      <div id="title" class="panel">
+        <h1 class="logo">STARSTRING</h1>
+        <div class="sub">星弦</div>
+        <div class="rule"><b>按住</b>　勾住最近的天體繞行<br /><b>放開</b>　把自己甩出去<br />繞得越久越快，也越靠近恆星</div>
+        <div class="tap">點一下開始</div>
+        <div id="seed"></div>
+      </div>
+      <div id="over" class="panel">
+        <div id="over-cause"></div>
+        <div id="over-score"></div>
+        <div id="over-record"></div>
+        <div class="tap">點一下再來一局</div>
+      </div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

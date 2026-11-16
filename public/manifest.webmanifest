@@ -1,0 +1,16 @@
+{
+  "name": "STARSTRING 星弦",
+  "short_name": "星弦",
+  "description": "單指重力彈弓街機：按住勾住天體繞行，放開把自己甩出去。",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#05060f",
+  "theme_color": "#05060f",
+  "lang": "zh-Hant",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

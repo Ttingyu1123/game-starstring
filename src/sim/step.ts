@@ -1,12 +1,13 @@
 import {
   BOOST_DECAY, COMBO_CAP, COMBO_STEP, CRUISE_RECOVER, CRUISE_SPEED, DT, DUST_POINTS, DUST_RADIUS,
-  GRAZE_FACTOR, GRAZE_POINTS_PER_SEC, HEIGHT_POINTS, LATCH_POINTS, LATCH_RANGE, MAX_SPEED,
-  ORBIT_PULL, RADIAL_KEEP, RADIAL_TAU, VOID_ACCEL, VOID_BASE_SPEED, VOID_LEASH, VOID_MAX_SPEED,
-  VOID_START_Y, WALL_DAMP, WALL_X,
+  GRAZE_FACTOR, GRAZE_POINTS_PER_SEC, HEIGHT_POINTS, HOLE_GRAVITY, HOLE_GRAZE_RADIUS, HOLE_HORIZON,
+  HOLE_ORBIT_PULL, HOLE_REACH, HOLE_SOFTENING, LATCH_POINTS, LATCH_RANGE, MAX_SPEED, ORBIT_PULL, RADIAL_KEEP, RADIAL_TAU,
+  VOID_ACCEL, VOID_BASE_SPEED, VOID_LEASH, VOID_MAX_SPEED, VOID_START_Y, WALL_DAMP, WALL_X,
 } from './config';
-import type { DeathCause, Latch, SimEvent, SimState, Star, Vec, WorldLike } from './types';
+import type { BlackHole, Body, DeathCause, Latch, SimEvent, SimState, Star, Vec, WorldLike } from './types';
 
 const RADIAL_BLEND = 1 - Math.exp(-DT / RADIAL_TAU);
+const COLLISION_SCAN = 1.2;
 
 export function initialState(): SimState {
   return {
@@ -21,7 +22,7 @@ export function initialState(): SimState {
     bonus: 0,
     combo: 0,
     bestCombo: 0,
-    lastStarId: null,
+    lastBodyId: null,
     grazing: false,
     collected: new Set(),
     events: [],
@@ -40,27 +41,44 @@ export function voidSpeed(tick: number): number {
   return Math.min(VOID_MAX_SPEED, VOID_BASE_SPEED + VOID_ACCEL * tick * DT);
 }
 
-/** 按住時會勾住哪顆星；渲染層用它畫瞄準提示，所以與 step 共用同一套規則。 */
-export function latchTarget(pos: Vec, world: WorldLike): Star | null {
-  let best: Star | null = null;
+const starBody = (s: Star): Body => ({ id: s.id, x: s.x, y: s.y, radius: s.radius, kind: 'star' });
+const holeBody = (h: BlackHole): Body => ({ id: h.id, x: h.x, y: h.y, radius: HOLE_HORIZON, kind: 'hole' });
+
+/** 按住時會勾住哪個天體（最近的恆星或黑洞）；渲染層用它畫瞄準提示，所以與 step 共用同一套規則。 */
+export function latchTarget(pos: Vec, world: WorldLike, tick: number): Body | null {
+  const bodies = [
+    ...world.starsNear(pos.y, LATCH_RANGE, tick).map(starBody),
+    ...world.holesNear(pos.y, LATCH_RANGE).map(holeBody),
+  ];
+  let best: Body | null = null;
   let bestDist = LATCH_RANGE;
-  for (const star of world.starsNear(pos.y, LATCH_RANGE)) {
-    const dist = Math.hypot(pos.x - star.x, pos.y - star.y);
-    if (dist < bestDist && dist > star.radius) {
-      best = star;
+  for (const body of bodies) {
+    const dist = Math.hypot(pos.x - body.x, pos.y - body.y);
+    if (dist < bestDist && dist > body.radius) {
+      best = body;
       bestDist = dist;
     }
   }
   return best;
 }
 
-function beginLatch(pos: Vec, vel: Vec, star: Star): Latch {
+export function latchedBody(latch: Latch, world: WorldLike, tick: number): Body | undefined {
+  if (latch.kind === 'hole') {
+    const hole = world.hole(latch.bodyId);
+    return hole && holeBody(hole);
+  }
+  const star = world.star(latch.bodyId, tick);
+  return star && starBody(star);
+}
+
+function beginLatch(pos: Vec, vel: Vec, star: Body): Latch {
   const rx = pos.x - star.x;
   const ry = pos.y - star.y;
   const r = Math.hypot(rx, ry);
   const speed = Math.hypot(vel.x, vel.y);
   return {
-    starId: star.id,
+    bodyId: star.id,
+    kind: star.kind,
     r,
     theta: Math.atan2(ry, rx),
     vr: ((vel.x * rx + vel.y * ry) / r) * RADIAL_KEEP,
@@ -69,8 +87,10 @@ function beginLatch(pos: Vec, vel: Vec, star: Star): Latch {
   };
 }
 
-function advanceLatch(latch: Latch, star: Star): { latch: Latch; pos: Vec; vel: Vec } {
-  const vr = latch.vr + (-ORBIT_PULL - latch.vr) * RADIAL_BLEND;
+/** `drift` 是恆星本身的速度（雙星才非零），放開時彗星會帶著它飛出。 */
+function advanceLatch(latch: Latch, star: Body, drift: Vec): { latch: Latch; pos: Vec; vel: Vec } {
+  const pull = latch.kind === 'hole' ? HOLE_ORBIT_PULL : ORBIT_PULL;
+  const vr = latch.vr + (-pull - latch.vr) * RADIAL_BLEND;
   const r = latch.r + vr * DT;
   const vt = Math.min(latch.L / r, MAX_SPEED);
   const theta = latch.theta + ((latch.sense * vt) / r) * DT;
@@ -79,17 +99,40 @@ function advanceLatch(latch: Latch, star: Star): { latch: Latch; pos: Vec; vel: 
   return {
     latch: { ...latch, r, theta, vr },
     pos: { x: star.x + cos * r, y: star.y + sin * r },
-    vel: { x: cos * vr - sin * vt * latch.sense, y: sin * vr + cos * vt * latch.sense },
+    vel: {
+      x: cos * vr - sin * vt * latch.sense + drift.x,
+      y: sin * vr + cos * vt * latch.sense + drift.y,
+    },
   };
 }
 
-function advanceFree(pos: Vec, vel: Vec): { pos: Vec; vel: Vec; bounced: boolean } {
-  const speed = Math.hypot(vel.x, vel.y);
+function holePull(pos: Vec, holes: readonly BlackHole[]): Vec {
+  let ax = 0;
+  let ay = 0;
+  for (const hole of holes) {
+    const dx = hole.x - pos.x;
+    const dy = hole.y - pos.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist >= HOLE_REACH || dist < 1e-9) continue;
+    // 在作用範圍邊緣平滑歸零，避免跨過邊界時加速度跳變。
+    const falloff = 1 - (dist / HOLE_REACH) ** 2;
+    const a = (HOLE_GRAVITY / (dist * dist + HOLE_SOFTENING)) * falloff;
+    ax += (dx / dist) * a;
+    ay += (dy / dist) * a;
+  }
+  return { x: ax, y: ay };
+}
+
+function advanceFree(pos: Vec, vel: Vec, holes: readonly BlackHole[]): { pos: Vec; vel: Vec; bounced: boolean } {
+  const pull = holePull(pos, holes);
+  const pulledX = vel.x + pull.x * DT;
+  const pulledY = vel.y + pull.y * DT;
+  const speed = Math.hypot(pulledX, pulledY);
   const rate = speed > CRUISE_SPEED ? BOOST_DECAY : CRUISE_RECOVER;
-  const nextSpeed = CRUISE_SPEED + (speed - CRUISE_SPEED) * Math.exp(-rate * DT);
+  const nextSpeed = Math.min(MAX_SPEED, CRUISE_SPEED + (speed - CRUISE_SPEED) * Math.exp(-rate * DT));
   const k = speed > 1e-9 ? nextSpeed / speed : 1;
-  let vx = vel.x * k;
-  let vy = vel.y * k;
+  let vx = pulledX * k;
+  let vy = pulledY * k;
   let x = pos.x + vx * DT;
   const y = pos.y + vy * DT;
   let bounced = false;
@@ -102,13 +145,23 @@ function advanceFree(pos: Vec, vel: Vec): { pos: Vec; vel: Vec; bounced: boolean
   return { pos: { x, y }, vel: { x: vx, y: vy }, bounced };
 }
 
+function collision(pos: Vec, world: WorldLike, tick: number): DeathCause | null {
+  for (const star of world.starsNear(pos.y, COLLISION_SCAN, tick)) {
+    if (Math.hypot(pos.x - star.x, pos.y - star.y) <= star.radius) return 'star';
+  }
+  for (const hole of world.holesNear(pos.y, COLLISION_SCAN)) {
+    if (Math.hypot(pos.x - hole.x, pos.y - hole.y) <= HOLE_HORIZON) return 'hole';
+  }
+  return null;
+}
+
 export function step(state: SimState, hold: boolean, world: WorldLike): SimState {
   if (!state.alive) return state.events.length ? { ...state, events: [] } : state;
 
   const events: SimEvent[] = [];
-  let { pos, vel, latch, combo, lastStarId, bonus, collected } = state;
+  const nextTick = state.tick + 1;
+  let { pos, vel, latch, combo, lastBodyId, bonus, collected } = state;
   let grazing = false;
-  let death: DeathCause | null = null;
 
   if (latch && !hold) {
     latch = null;
@@ -116,40 +169,41 @@ export function step(state: SimState, hold: boolean, world: WorldLike): SimState
   }
 
   if (!latch && hold) {
-    const target = latchTarget(pos, world);
+    const target = latchTarget(pos, world, state.tick);
     if (target) {
-      const fresh = target.id !== lastStarId;
+      const fresh = target.id !== lastBodyId;
       if (fresh) {
         combo += 1;
         bonus += LATCH_POINTS * multiplier(combo);
       }
-      lastStarId = target.id;
+      lastBodyId = target.id;
       latch = beginLatch(pos, vel, target);
-      events.push({ type: 'latch', starId: target.id, combo, fresh });
+      events.push({ type: 'latch', bodyId: target.id, kind: target.kind, combo, fresh });
     }
   }
 
-  const latchedStar = latch ? world.star(latch.starId) : undefined;
-  if (latch && latchedStar) {
-    const next = advanceLatch(latch, latchedStar);
+  const starNow = latch ? latchedBody(latch, world, state.tick) : undefined;
+  const starNext = latch ? latchedBody(latch, world, nextTick) : undefined;
+  if (latch && starNow && starNext) {
+    const drift = { x: (starNext.x - starNow.x) / DT, y: (starNext.y - starNow.y) / DT };
+    const next = advanceLatch(latch, starNext, drift);
     ({ latch, pos, vel } = next);
-    if (next.latch.r <= latchedStar.radius) death = 'star';
-    else if (next.latch.r < latchedStar.radius * GRAZE_FACTOR) {
+    const grazeRadius = starNext.kind === 'hole' ? HOLE_GRAZE_RADIUS : starNext.radius * GRAZE_FACTOR;
+    if (next.latch.r < grazeRadius) {
       grazing = true;
       bonus += GRAZE_POINTS_PER_SEC * DT * multiplier(combo);
     }
   } else {
     latch = null;
-    const next = advanceFree(pos, vel);
+    const next = advanceFree(pos, vel, world.holesNear(pos.y, HOLE_REACH));
     ({ pos, vel } = next);
     if (next.bounced) {
       combo = 0;
       events.push({ type: 'bounce', x: pos.x, y: pos.y });
     }
-    for (const star of world.starsNear(pos.y, 1)) {
-      if (Math.hypot(pos.x - star.x, pos.y - star.y) <= star.radius) death = 'star';
-    }
   }
+
+  let death = collision(pos, world, nextTick);
 
   for (const dust of world.dustNear(pos.y, DUST_RADIUS)) {
     if (collected.has(dust.id)) continue;
@@ -165,7 +219,7 @@ export function step(state: SimState, hold: boolean, world: WorldLike): SimState
   if (death) events.push({ type: 'death', cause: death });
 
   return {
-    tick: state.tick + 1,
+    tick: nextTick,
     pos,
     vel,
     latch,
@@ -176,7 +230,7 @@ export function step(state: SimState, hold: boolean, world: WorldLike): SimState
     bonus,
     combo,
     bestCombo: Math.max(state.bestCombo, combo),
-    lastStarId,
+    lastBodyId,
     grazing,
     collected,
     events,

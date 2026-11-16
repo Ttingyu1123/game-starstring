@@ -9,12 +9,17 @@
     "preview": "vite preview --port 57318 --strictPort",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "solve": "node scripts/solve.mjs",
     "e2e": "node e2e/smoke.mjs"
   },
   "devDependencies": {
+    "@types/three": "^0.187.0",
     "playwright-core": "^1.65.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",
     "vitest": "^5.1.0"
+  },
+  "dependencies": {
+    "three": "^0.187.0"
   }
 }

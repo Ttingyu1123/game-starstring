@@ -7,6 +7,8 @@ import { World } from './world';
 function fixedWorld(stars: Star[]): WorldLike {
   return {
     starsNear: () => stars,
+    holesNear: () => [],
+    hole: () => undefined,
     dustNear: () => [],
     star: (id) => stars.find((s) => s.id === id),
   };
@@ -115,17 +117,51 @@ describe('勾住與彈弓', () => {
   });
 });
 
+describe('黑洞', () => {
+  const hole = { id: '0:h', x: 1.2, y: 6 };
+  const world: WorldLike = { ...fixedWorld([]), holesNear: () => [hole], hole: () => hole };
+  const far: SimState = { ...initialState(), voidY: -1000 };
+
+  it('自由飛行時軌跡被引力彎向黑洞', () => {
+    // 飛到與黑洞同高（y ≈ 6）時，已在引力範圍內待了約半秒。
+    const s = run(far, world, 120, () => false);
+    expect(s.alive).toBe(true);
+    expect(s.pos.x).toBeGreaterThan(0.1);
+    expect(s.vel.x).toBeGreaterThan(0.5);
+  });
+
+  it('直直飛進視界會死亡', () => {
+    const s = run({ ...far, pos: { x: 1.2, y: 0 } }, world, 240, () => false);
+    expect(s.deathCause).toBe('hole');
+  });
+
+  it('可以勾住黑洞，而且加速比繞恆星更猛', () => {
+    const near = run(far, world, Math.round(5 / CRUISE_SPEED / DT), () => false);
+    const onHole = run(near, world, 90, () => true);
+    expect(onHole.latch?.kind).toBe('hole');
+    const star: Star = { id: 's', x: hole.x, y: hole.y, radius: 0.34, hue: 0 };
+    const onStar = run(near, fixedWorld([star]), 90, () => true);
+    const speed = (s: SimState) => Math.hypot(s.vel.x, s.vel.y);
+    expect(speed(onHole)).toBeGreaterThan(speed(onStar));
+  });
+
+  it('勾著黑洞不放最終會落入視界', () => {
+    const near = run(far, world, Math.round(5 / CRUISE_SPEED / DT), () => false);
+    expect(run(near, world, 120 * 8, () => true).deathCause).toBe('hole');
+  });
+});
+
 describe('星圖生成', () => {
   it('同種子相同、不同種子不同', () => {
-    const a = new World(7).starsNear(100, 50);
-    expect(new World(7).starsNear(100, 50)).toEqual(a);
-    expect(new World(8).starsNear(100, 50)).not.toEqual(a);
+    const a = new World(7).starsNear(100, 50, 0);
+    expect(new World(7).starsNear(100, 50, 0)).toEqual(a);
+    expect(new World(8).starsNear(100, 50, 0)).not.toEqual(a);
   });
 
   it('恆星彼此保持最小間距且都在場地內', () => {
     for (const seed of [1, 2, 3]) {
-      const stars = new World(seed).starsNear(900, 900);
-      expect(stars.length).toBeGreaterThan(300);
+      const stars = new World(seed).starsNear(900, 900, 0).filter((s) => !s.orbit);
+      expect(stars.length).toBeGreaterThan(250);
       for (const a of stars) {
         expect(Math.abs(a.x)).toBeLessThanOrEqual(STAR_X_RANGE);
         for (const b of stars) {

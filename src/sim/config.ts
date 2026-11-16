@@ -41,3 +41,22 @@ export const CHUNK_HEIGHT = 9;
 export const CHUNK_MARGIN = 1.5;
 export const STAR_X_RANGE = 3;
 export const STAR_MIN_GAP = 3;
+
+export const HOLE_HORIZON = 0.34;
+export const HOLE_REACH = 3;
+export const HOLE_GRAVITY = 14;
+export const HOLE_SOFTENING = 0.15;
+/**
+ * 黑洞只放在場地中央：|x| + HOLE_REACH 必須小於邊界通道的內緣。
+ * 貼牆飛行時離所有恆星都超過 LATCH_RANGE、無星可勾，若引力碰得到那裡就是必死局
+ * （200 種子驗收實測：改之前 16 個種子死於此）。
+ */
+export const HOLE_X_RANGE = 1.4;
+/** 從第幾個 chunk 起開始出現黑洞／雙星。 */
+export const HOLE_FROM_CHUNK = 5;
+export const BINARY_FROM_CHUNK = 8;
+export const BINARY_RADIUS = 1.6;
+export const BINARY_OMEGA = 0.5;
+/** 繞黑洞時軌道收縮得比繞恆星快：加速更猛，也更快掉進視界。 */
+export const HOLE_ORBIT_PULL = 0.9;
+export const HOLE_GRAZE_RADIUS = 0.9;
