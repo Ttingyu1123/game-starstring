@@ -121,6 +121,15 @@ try {
   const again = await read();
   assert(again.phase === 'playing' && again.alive && again.tick < 120, '點一下應重新開始');
   assert((await page.evaluate(() => window.__starstring.ghost())) !== null, '第二局應有幽靈彗星');
+  const tag = await page.evaluate(() => {
+    const el = document.querySelector('#ghost-tag');
+    const box = el.getBoundingClientRect();
+    return { on: el.dataset.on, text: el.textContent, inView: box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight };
+  });
+  assert(tag.on === 'true' && tag.text.includes('最佳紀錄') && tag.inView, `幽靈應有畫面內的「最佳紀錄」標籤（${JSON.stringify(tag)}）`);
+  // 等幽靈和玩家分開再截圖，才看得到光環本身。
+  await page.waitForTimeout(1500);
+  await shot('ghost');
 
   // 回到標題讓示範局飛到第一個黑洞，確認透鏡與吸積盤有畫出來。
   await page.reload();

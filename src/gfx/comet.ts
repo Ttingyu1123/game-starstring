@@ -5,7 +5,25 @@ import { WORLD_VERTEX } from './glsl';
 const TRAIL_SAMPLES = 56;
 const TRAIL_WIDTH = 0.2;
 const HEAD_SIZE = 2.2;
-const GHOST_COLOR = new THREE.Color(0.5, 0.25, 0.9);
+/** 薄荷綠：彗星本身只會是青、洋紅、金三色，幽靈用它們之外的顏色才不會混淆。 */
+const GHOST_COLOR = new THREE.Color(0.45, 1.3, 0.8);
+const GHOST_RING_RADIUS = 0.36;
+
+const GHOST_FRAGMENT = /* glsl */ `
+precision highp float;
+varying vec2 vUv;
+uniform vec3 uColor;
+uniform float uTime;
+void main() {
+  vec2 p = (vUv - 0.5) * ${HEAD_SIZE.toFixed(2)};
+  float r = length(p);
+  float dash = 0.55 + 0.45 * sin(atan(p.y, p.x) * 6.0 + uTime * 2.5);
+  float ring = exp(-pow((r - ${GHOST_RING_RADIUS.toFixed(2)}) / 0.035, 2.0)) * dash;
+  float core = exp(-r * r * 90.0);
+  float halo = exp(-r * 5.0) * 0.25;
+  gl_FragColor = vec4(uColor * (ring * 1.6 + halo) + vec3(1.0) * core * 1.2, 1.0);
+}
+`;
 
 const HEAD_FRAGMENT = /* glsl */ `
 precision highp float;
@@ -73,7 +91,7 @@ export interface CometLayer {
   readonly group: THREE.Group;
   update(pos: Vec, visible: boolean, color: THREE.Color, tether: { star: Vec; color: THREE.Color } | null, time: number): void;
   /** 上一次最佳紀錄的幽靈彗星；傳 null 隱藏。 */
-  setGhost(pos: Vec | null): void;
+  setGhost(pos: Vec | null, time: number): void;
   reset(): void;
 }
 
@@ -114,9 +132,9 @@ export function createCometLayer(): CometLayer {
   const tetherMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), tetherMaterial);
   tetherMesh.renderOrder = 2;
 
-  const ghost = new THREE.Mesh(head.geometry, additive(HEAD_FRAGMENT, WORLD_VERTEX, { uColor: { value: GHOST_COLOR } }));
+  const ghostMaterial = additive(GHOST_FRAGMENT, WORLD_VERTEX, { uColor: { value: GHOST_COLOR }, uTime: { value: 0 } });
+  const ghost = new THREE.Mesh(head.geometry, ghostMaterial);
   ghost.renderOrder = 2;
-  ghost.scale.setScalar(0.8);
   ghost.visible = false;
 
   group.add(trail, tetherMesh, ghost, head);
@@ -172,8 +190,9 @@ export function createCometLayer(): CometLayer {
         u.uLength!.value = length;
       }
     },
-    setGhost(pos) {
+    setGhost(pos, time) {
       ghost.visible = pos !== null;
+      ghostMaterial.uniforms.uTime!.value = time;
       if (pos) ghost.position.set(pos.x, pos.y, 0);
     },
     reset() {

@@ -206,6 +206,8 @@ function start(): void {
       newBest,
       showHint: state.tick < HINT_TICKS,
       seedLabel: label,
+      ghost: phase === 'playing' && ghostPos ? gfx.toScreen(ghostPos) : null,
+      hasGhost: ghostPlayer !== null,
     });
     requestAnimationFrame(frame);
   };
