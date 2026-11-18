@@ -23,7 +23,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      # ponytail: npm install, not npm ci. The lockfile is written on Windows and npm leaves out
+      # Linux-only optional packages (@emnapi/*), so npm ci rejects it here. Switch back once that is fixed.
+      - run: npm install --no-audit --no-fund
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
