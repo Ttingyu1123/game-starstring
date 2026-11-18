@@ -12,20 +12,12 @@ export interface HudView {
   readonly newBest: boolean;
   readonly showHint: boolean;
   readonly seedLabel: string;
-  /** 幽靈彗星在畫面上的位置（比例，可超出 0–1）；沒有幽靈時為 null。 */
-  readonly ghost: { readonly x: number; readonly y: number } | null;
   /** 這一局有幽靈：開場提示改成說明它是什麼。 */
   readonly hasGhost: boolean;
 }
 
 const HINT_CONTROLS = '按住 勾住恆星　·　放開 甩出去';
-const HINT_GHOST = '綠色光環＝你在這張星圖的最佳紀錄';
-/** 幽靈在畫面內時，標籤浮在它上方多少像素。 */
-const GHOST_TAG_LIFT = 30;
-/** 幽靈跑出畫面時，標籤貼在距離上下緣與左右緣多少像素的位置。 */
-const GHOST_TAG_TOP = 96;
-const GHOST_TAG_BOTTOM = 76;
-const GHOST_TAG_SIDE = 64;
+const HINT_GHOST = '紫色小亮點＝你在這張星圖的最佳紀錄';
 
 const DEATH_TEXT: Record<DeathCause, string> = {
   star: '墜入恆星',
@@ -61,29 +53,12 @@ export function createHud(): (view: HudView) => void {
   const setRecord = textSetter(need('#over-record'));
   const setSeed = textSetter(need('#seed'));
   const setHint = textSetter(need('#hint'));
-  const ghostTag = need<HTMLElement>('#ghost-tag');
-  const setGhostText = textSetter(ghostTag);
   let lastCombo = 0;
-
-  const placeGhostTag = (ghost: HudView['ghost']): void => {
-    ghostTag.dataset.on = String(ghost !== null);
-    if (!ghost) return;
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    const x = Math.min(w - GHOST_TAG_SIDE, Math.max(GHOST_TAG_SIDE, ghost.x * w));
-    const above = ghost.y < 0;
-    const below = ghost.y > 1;
-    const y = above ? GHOST_TAG_TOP : below ? h - GHOST_TAG_BOTTOM : Math.max(GHOST_TAG_TOP, ghost.y * h - GHOST_TAG_LIFT);
-    setGhostText(above ? '▲ 最佳紀錄領先中' : below ? '▼ 已超越最佳紀錄' : '最佳紀錄');
-    ghostTag.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -50%)`;
-  };
 
   return (view) => {
     root.dataset.phase = view.phase;
     root.dataset.hint = String(view.showHint);
-    setHint(view.hasGhost ? HINT_GHOST : HINT_CONTROLS);
-    placeGhostTag(view.ghost);
-    setScore(String(view.score));
+    setHint(view.hasGhost ? HINT_GHOST : HINT_CONTROLS);    setScore(String(view.score));
     setBest(`最佳 ${view.best}`);
     setSeed(view.seedLabel);
 

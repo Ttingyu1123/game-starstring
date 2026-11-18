@@ -52,8 +52,6 @@ export interface Gfx {
   handleEvents(events: readonly SimEvent[], state: SimState, world: WorldLike): void;
   reset(): void;
   probe(): Probe;
-  /** 世界座標換成畫面比例（左上角為 0,0、右下角為 1,1；畫面外會超出這個範圍）。 */
-  toScreen(pos: Vec): Vec;
 }
 
 export function createGfx(canvas: HTMLCanvasElement): Gfx {
@@ -148,7 +146,7 @@ export function createGfx(canvas: HTMLCanvasElement): Gfx {
       time,
     );
 
-    comet.setGhost(ghost, time);
+    comet.setGhost(ghost);
 
     if (state.alive && dt > 0) {
       const back = Math.atan2(-state.vel.y, -state.vel.x);
@@ -230,8 +228,5 @@ export function createGfx(canvas: HTMLCanvasElement): Gfx {
       sprites.reset();
     },
     probe,
-    toScreen(pos) {
-      return { x: (pos.x + halfW) / (halfW * 2), y: ((camY ?? 0) + halfH - pos.y) / (halfH * 2) };
-    },
   };
 }
