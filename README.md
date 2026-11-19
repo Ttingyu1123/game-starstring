@@ -1,5 +1,7 @@
 # STARSTRING 星弦
 
+**直接玩：https://game-starstring.tingyudeco.com/**
+
 單指重力彈弓街機。你是一顆彗星：**按住**勾住最近的天體繞行，**放開**把自己甩出去。
 
 - 繞得越久軌道越小、速度越快（角動量守恆），但也越接近墜毀。
@@ -23,6 +25,17 @@ npm run solve      # 完整驗收：機器人在 200 個種子上都要存活 60
 npm run build
 npm run e2e        # 需先 build；用本機 Chrome 實際玩一輪，截圖在 e2e/out/
 ```
+
+## 部署
+
+推到 `main` 就會由 [.github/workflows/deploy.yml](.github/workflows/deploy.yml) 自動跑型別檢查、單元測試、建置，然後發布到 GitHub Pages。
+
+- 正式網址是 `game-starstring.tingyudeco.com`：Cloudflare 上一筆 CNAME 指向 `ttingyu1123.github.io`，Proxy 必須關閉（DNS only），否則 GitHub 發不出 HTTPS 憑證。
+- 自訂網域設在 repo 的 Pages 設定裡，不需要 `CNAME` 檔。舊網址 `ttingyu1123.github.io/game-starstring/` 會自動轉到正式網址。
+- `vite.config.ts` 的 `base` 是 `./`，所以放在子路徑或網域根目錄都能運作，換網址不用改程式。
+- 最高分與幽靈紀錄存在瀏覽器的 localStorage，跟著網址走；換網址等於玩家的紀錄歸零。
+- CI 用 `npm install` 而不是 `npm ci`：鎖定檔在 Windows 產生，缺少 Linux 專用的選用套件，`npm ci` 會拒絕它。
+- CI 沒有跑 `npm run solve` 和 `npm run e2e`，動到難度或畫面時請在本機跑。
 
 ## 架構
 
